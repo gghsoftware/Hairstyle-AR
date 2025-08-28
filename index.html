@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>StyleBook — 3 Hairstyle Filters (TFJS, Single‑File)</title>
+  <title>StyleBook — 3 Hairstyle Filters + PNG Upload (Mobile + SweetAlert2)</title>
   <style>
     :root{ --ink:#111827; --muted:#6B7280; --bg:#F9FAFB; --card:#FFFFFF; --accent:#111827; --radius:16px; --radius-sm:12px; --shadow:0 8px 24px rgba(0,0,0,.08); }
     *{box-sizing:border-box}
@@ -11,7 +11,7 @@
     a{color:inherit}
     .container{max-width:1080px;margin:0 auto;padding:16px}
     nav{position:sticky;top:0;background:#fff;border-bottom:1px solid #eee;z-index:5}
-    nav .row{display:flex;gap:16px;align-items:center;padding:14px 16px}
+    nav .row{display:flex;gap:12px;align-items:center;padding:12px 16px;flex-wrap:wrap}
     nav .brand{font-weight:900}
     nav .spacer{flex:1}
     .btn{display:inline-flex;align-items:center;gap:8px;padding:10px 14px;border-radius:var(--radius-sm);border:1px solid var(--ink);background:var(--ink);color:#fff;text-decoration:none;font-weight:700;cursor:pointer}
@@ -27,9 +27,10 @@
     p.muted{color:var(--muted)}
 
     .stage{position:relative;width:100%;aspect-ratio:3/4;background:#000;border-radius:var(--radius);overflow:hidden}
+    @media(max-width:480px){ .stage{ aspect-ratio:9/16; } }
     .stage video{width:100%;height:100%;object-fit:cover;transform:scaleX(-1)} /* mirrored */
     .overlay{position:absolute;left:0;top:0;right:0;bottom:0;pointer-events:none}
-    .hair{position:absolute;width:240px;user-select:none;filter:drop-shadow(0 4px 12px rgba(0,0,0,.25));pointer-events:none}
+    .hair{position:absolute;width:240px;user-select:none;filter:drop-shadow(0 4px 12px rgba(0,0,0,.25));pointer-events:none;transform-origin:50% 12%;}
 
     .toolbar{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}
     .picker{display:flex;gap:8px;flex-wrap:wrap}
@@ -57,6 +58,12 @@
 
     footer{padding:16px;border-top:1px solid #eee;color:#555;font-size:12px}
     .tip{font-size:12px;color:#666;margin-top:8px}
+
+    /* Mobile niceties */
+    @media(max-width:720px){
+      .btn{flex:1 1 auto; justify-content:center}
+      nav .row > a.btn.ghost{display:none}
+    }
   </style>
 </head>
 <body>
@@ -76,7 +83,7 @@
     <section id="tryon" class="card">
       <div class="pad">
         <h1>AR Hairstyle Try‑On (Auto Tracking)</h1>
-        <p class="muted">Three ready‑made styles (Bob, Curly, Pixie). Runs in‑browser via TensorFlow.js FaceMesh with auto‑align, rotation, scaling, camera switching, FPS cap, smoothing, and snapshots. You can also upload your own PNG/SVG.</p>
+        <p class="muted">Three built‑in styles (Bob, Curly, Pixie) or upload your own PNG/SVG. Auto‑aligns, rotates and scales to your face. Mobile‑friendly and supports snapshots.</p>
 
         <div id="notice" class="banner" style="display:none"></div>
 
@@ -103,8 +110,8 @@
           <input id="upload" type="file" accept="image/png,image/svg+xml" style="display:none" />
         </div>
         <div class="sliders">
-          <label>Scale <input id="scale" type="range" min="1.0" max="2.2" step="0.01" value="1.35"></label>
-          <label>Vertical Offset <input id="vOffset" type="range" min="0.20" max="0.80" step="0.01" value="0.45"></label>
+          <label>Scale <input id="scale" type="range" min="1.0" max="2.4" step="0.01" value="1.35"></label>
+          <label>Vertical Offset <input id="vOffset" type="range" min="0.10" max="0.90" step="0.01" value="0.45"></label>
         </div>
       </div>
       <div class="pad" style="padding-top:0">
@@ -116,7 +123,7 @@
             <img id="hair" class="hair" alt="hair" src="" />
           </div>
         </div>
-        <div class="tip">Tip: Good lighting helps tracking. If the overlay is slightly off, tweak <b>Scale</b> and <b>Vertical Offset</b>. Camera access needs HTTPS (localhost is okay).</div>
+        <div class="tip">For uploads, use a transparent‑background PNG around 700–1200px wide. The app keeps your PNG's aspect ratio and centers it to your face.</div>
       </div>
     </section>
 
@@ -193,6 +200,8 @@
   <!-- TFJS + Face Landmarks (UMD builds) -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.20.0/dist/tf.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/face-landmarks-detection@1.0.4/dist/face-landmarks-detection.min.js"></script>
+  <!-- SweetAlert2 for nicer success modals -->
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 
   <script>
     // ---------- Utility ----------
@@ -290,6 +299,7 @@
       });
 
       // color swatches
+      colorPicker.querySelectorAll('.swatch').forEach(el=>el.remove());
       const savedColor = localStorage.getItem('stylebook_color') || colors[0].id;
       colors.forEach(c => {
         const sw = document.createElement('button');
@@ -330,6 +340,14 @@
     let scaleFactor = parseFloat(localStorage.getItem('stylebook_scale') || $('#scale').value);
     let vOffset = parseFloat(localStorage.getItem('stylebook_voff') || $('#vOffset').value);
     let smoothT = parseFloat(localStorage.getItem('stylebook_smooth') || $('#smooth').value);
+
+    // Track aspect ratio of current hair image (works for uploaded PNGs too)
+    let hairAR = 1; // height/width
+    hairImg.onload = () => {
+      const nw = hairImg.naturalWidth || 1;
+      const nh = hairImg.naturalHeight || 1;
+      hairAR = nh / nw;
+    };
 
     // Smoothing
     const smooth = { x: null, y: null, w: null, h: null, angle: 0 };
@@ -376,7 +394,7 @@
     upload.addEventListener('change', () => {
       const file = upload.files && upload.files[0]; if(!file) return;
       const url = URL.createObjectURL(file);
-      hairImg.src = url; // custom asset bypasses colorization
+      hairImg.src = url; // custom asset keeps native aspect via hairAR
       $$('.chip', picker).forEach(c=>c.classList.remove('active'));
     });
 
@@ -459,7 +477,8 @@
       const tmp = document.createElement('canvas'); tmp.width = w; tmp.height = h; const tctx = tmp.getContext('2d');
       const angle = (hairImg.style.transform.match(/rotate\(([-0-9.]+)deg\)/) || [0,0])[1] * Math.PI/180;
       tctx.translate(w/2, h/2); tctx.rotate(angle); tctx.translate(-w/2, -h/2);
-      const img = new Image(); img.onload = () => { tctx.drawImage(img, 0, 0, w, h); ctx.drawImage(tmp, x, y); const a = document.createElement('a'); a.download = 'stylebook-snapshot.png'; a.href = canvas.toDataURL('image/png'); a.click(); };
+      const img = new Image(); img.crossOrigin = 'anonymous';
+      img.onload = () => { tctx.drawImage(img, 0, 0, w, h); ctx.drawImage(tmp, x, y); const a = document.createElement('a'); a.download = 'stylebook-snapshot.png'; a.href = canvas.toDataURL('image/png'); a.click(); };
       img.src = hairImg.src;
     }
 
@@ -480,6 +499,9 @@
             const minY = Math.min(...ys) * sy, maxY = Math.max(...ys) * sy;
             const w = maxX - minX, h = maxY - minY;
             const leftEye = f.keypoints[263]; const rightEye = f.keypoints[33];
+            const leftX = leftEye ? leftEye.x * sx : (minX + w * 0.35);
+            const rightX = rightEye ? rightEye.x * sx : (minX + w * 0.65);
+            const eyeMidX = (leftX + rightX) / 2; // → center horizontally on the face
             const angle = (leftEye && rightEye) ? (Math.atan2((leftEye.y*sy) - (rightEye.y*sy), (leftEye.x*sx) - (rightEye.x*sx)) * 180 / Math.PI) : 0;
 
             // Smooth
@@ -490,10 +512,10 @@
             smooth.h = smooth.h===null ? h    : lerp(smooth.h,  h,  t);
             smooth.angle = lerp(smooth.angle, angle, Math.max(t, 0.25));
 
-            // Position hair (centered relative to face box)
+            // Position hair — centered on eyes midpoint (better centering)
             const hairW = smooth.w * scaleFactor;
-            const hairH = smooth.h * 0.9; // keeps proportions natural
-            const hairX = smooth.x + smooth.w / 2 - hairW / 2;
+            const hairH = hairW * hairAR; // keep native aspect ratio (esp. for PNG uploads)
+            const hairX = eyeMidX - hairW / 2;
             const hairY = Math.max(smooth.y - smooth.h * vOffset, 0);
 
             Object.assign(hairImg.style, {
@@ -518,11 +540,26 @@
       requestAnimationFrame(loop);
     }
 
-    // Booking demo
+    // Booking demo — SweetAlert2 success modal
     $('#form').addEventListener('submit', (e)=>{
       e.preventDefault();
       const data = Object.fromEntries(new FormData(e.target).entries());
-      alert('Booked!\n\n' + JSON.stringify(data, null, 2));
+      Swal.fire({
+        icon: 'success',
+        title: 'Booking Confirmed!',
+        html: `
+          <div style="text-align:left">
+            <p><b>Name:</b> ${data.name || ''}</p>
+            <p><b>Phone:</b> ${data.phone || ''}</p>
+            <p><b>Service:</b> ${data.service || ''}</p>
+            <p><b>Stylist:</b> ${data.stylist || ''}</p>
+            <p><b>Date:</b> ${data.date || ''}</p>
+            <p><b>Time:</b> ${data.time || ''}</p>
+          </div>
+        `,
+        confirmButtonText: 'Done',
+        confirmButtonColor: '#111827'
+      });
       e.target.reset();
     });
 
