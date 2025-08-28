@@ -1,0 +1,471 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>StyleBook — Booking + AR Try‑On (Enhanced TFJS, Single‑File)</title>
+  <style>
+    :root{ --ink:#111827; --muted:#6B7280; --bg:#F9FAFB; --card:#FFFFFF; --accent:#111827; --radius:16px; --radius-sm:12px; --shadow:0 8px 24px rgba(0,0,0,.08); }
+    *{box-sizing:border-box}
+    body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Inter,sans-serif;color:var(--ink);background:var(--bg)}
+    a{color:inherit}
+    .container{max-width:1080px;margin:0 auto;padding:16px}
+    nav{position:sticky;top:0;background:#fff;border-bottom:1px solid #eee;z-index:5}
+    nav .row{display:flex;gap:16px;align-items:center;padding:14px 16px}
+    nav .brand{font-weight:900}
+    nav .spacer{flex:1}
+    .btn{display:inline-flex;align-items:center;gap:8px;padding:10px 14px;border-radius:var(--radius-sm);border:1px solid var(--ink);background:var(--ink);color:#fff;text-decoration:none;font-weight:700;cursor:pointer}
+    .btn.ghost{background:#fff;color:var(--ink)}
+
+    .grid{display:grid;gap:16px}
+    @media(min-width:960px){.grid-2{grid-template-columns:1.2fr .8fr}}
+
+    .card{background:var(--card);border:1px solid #eee;border-radius:var(--radius);box-shadow:var(--shadow)}
+    .card .pad{padding:16px}
+    h1{font-size:28px;margin:8px 0}
+    h2{font-size:20px;margin:6px 0 10px}
+    p.muted{color:var(--muted)}
+
+    .stage{position:relative;width:100%;aspect-ratio:3/4;background:#000;border-radius:var(--radius);overflow:hidden}
+    .stage video{width:100%;height:100%;object-fit:cover;transform:scaleX(-1)} /* mirrored */
+    .overlay{position:absolute;left:0;top:0;right:0;bottom:0;pointer-events:none}
+    .hair{position:absolute;width:240px;user-select:none;filter:drop-shadow(0 4px 12px rgba(0,0,0,.25))}
+
+    .toolbar{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}
+    .picker{display:flex;gap:8px;flex-wrap:wrap}
+    .chip{padding:8px 10px;border-radius:999px;border:1px solid #ddd;background:#fff;font-weight:700;cursor:pointer}
+    .chip.active{background:var(--ink);color:#fff;border-color:var(--ink)}
+
+    .sliders{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+    .sliders label{font-size:12px;color:#374151;font-weight:700}
+    .sliders input[type=range]{width:160px}
+    .row-ctrls{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+    select, .input{padding:9px 12px;border-radius:12px;border:1px solid #ddd;background:#fff}
+
+    .debug{position:absolute;border:2px dashed rgba(255,255,255,.7);border-radius:12px;pointer-events:none}
+    .hint{position:absolute;left:12px;top:12px;background:rgba(0,0,0,.5);color:#fff;padding:6px 10px;border-radius:10px;font-size:12px}
+    .banner{background:#FEF3C7;border:1px solid #FCD34D;color:#92400E;padding:10px 12px;border-radius:12px;margin:8px 0}
+
+    form .row{display:grid;gap:10px}
+    @media(min-width:720px){form .row{grid-template-columns:1fr 1fr}}
+    label{font-size:12px;color:#374151;font-weight:700;display:block;margin-bottom:6px}
+    input,select{width:100%;padding:10px 12px;border-radius:12px;border:1px solid #ddd;background:#fff}
+    .actions{display:flex;gap:10px;flex-wrap:wrap}
+
+    footer{padding:16px;border-top:1px solid #eee;color:#555;font-size:12px}
+    .tip{font-size:12px;color:#666;margin-top:8px}
+  </style>
+</head>
+<body>
+  <nav>
+    <div class="row container">
+      <div class="brand">StyleBook (Enhanced)</div>
+      <a class="btn ghost" href="#tryon">AR Try‑On</a>
+      <a class="btn ghost" href="#booking">Book</a>
+      <div class="spacer"></div>
+      <button class="btn" id="startCam">Start Camera</button>
+      <button class="btn ghost" id="snapshot">Snapshot</button>
+    </div>
+  </nav>
+
+  <main class="container grid grid-2" style="margin-top:16px">
+    <!-- AR TRY‑ON -->
+    <section id="tryon" class="card">
+      <div class="pad">
+        <h1>AR Hairstyle Try‑On (Auto Tracking)</h1>
+        <p class="muted">Runs in-browser via TensorFlow.js FaceMesh. Overlay auto‑aligns, rotates, and scales to your face. Now with camera switching, FPS limit, smoothing, and better sizing on any screen.</p>
+
+        <div id="notice" class="banner" style="display:none"></div>
+
+        <div class="toolbar">
+          <div class="row-ctrls">
+            <label>Camera
+              <select id="cameraSelect" class="input"></select>
+            </label>
+            <label>FPS
+              <input id="fps" type="range" min="5" max="30" step="1" value="15" />
+            </label>
+            <label>Smoothing
+              <input id="smooth" type="range" min="0" max="0.6" step="0.05" value="0.25" />
+            </label>
+            <label>
+              <input id="debugToggle" type="checkbox" /> Debug
+            </label>
+          </div>
+          <div class="picker" id="picker"></div>
+          <label class="chip" for="upload">Upload PNG</label>
+          <input id="upload" type="file" accept="image/png,image/svg+xml" style="display:none" />
+        </div>
+        <div class="sliders">
+          <label>Scale <input id="scale" type="range" min="1.0" max="2.2" step="0.01" value="1.35"></label>
+          <label>Vertical Offset <input id="vOffset" type="range" min="0.20" max="0.80" step="0.01" value="0.45"></label>
+        </div>
+      </div>
+      <div class="pad" style="padding-top:0">
+        <div class="stage" id="stage">
+          <video id="video" playsinline muted></video>
+          <div class="overlay" id="overlay">
+            <div id="hint" class="hint" style="display:none">Move into view…</div>
+            <div id="debugBox" class="debug" style="display:none"></div>
+            <img id="hair" class="hair" alt="hair" src="" />
+          </div>
+        </div>
+        <div class="tip">Good lighting helps tracking. If overlay is off, tweak <b>Scale</b> or <b>Vertical Offset</b>. Switch cameras for rear/front.</div>
+      </div>
+    </section>
+
+    <!-- BOOKING CARD -->
+    <section id="booking" class="card">
+      <div class="pad">
+        <h2>Book an Appointment</h2>
+        <form id="form">
+          <div class="row">
+            <div>
+              <label>Full Name</label>
+              <input required name="name" placeholder="Juan Dela Cruz" />
+            </div>
+            <div>
+              <label>Phone</label>
+              <input required name="phone" placeholder="09xx xxx xxxx" />
+            </div>
+          </div>
+          <div class="row">
+            <div>
+              <label>Service</label>
+              <select name="service" required>
+                <option value="">Select…</option>
+                <option>Basic Haircut (₱300)</option>
+                <option>Layered Cut (₱450)</option>
+                <option>Coloring (₱1200)</option>
+              </select>
+            </div>
+            <div>
+              <label>Stylist</label>
+              <select name="stylist" required>
+                <option value="">Select…</option>
+                <option>Alex</option>
+                <option>Jamie</option>
+                <option>Sam</option>
+              </select>
+            </div>
+          </div>
+          <div class="row">
+            <div>
+              <label>Date</label>
+              <input type="date" name="date" required />
+            </div>
+            <div>
+              <label>Time</label>
+              <select name="time" required>
+                <option value="">Select…</option>
+                <option>09:00 AM</option>
+                <option>09:30 AM</option>
+                <option>10:00 AM</option>
+                <option>10:30 AM</option>
+                <option>11:00 AM</option>
+                <option>01:00 PM</option>
+                <option>01:30 PM</option>
+                <option>02:00 PM</option>
+                <option>02:30 PM</option>
+                <option>03:00 PM</option>
+                <option>03:30 PM</option>
+                <option>04:00 PM</option>
+              </select>
+            </div>
+          </div>
+          <div class="actions" style="margin-top:10px">
+            <button class="btn" type="submit">Confirm Booking</button>
+            <a class="btn ghost" href="#tryon">Try Again</a>
+          </div>
+        </form>
+      </div>
+    </section>
+  </main>
+
+  <footer class="container">© <span id="year"></span> StyleBook — Camera requires HTTPS (localhost is fine).</footer>
+
+  <!-- TFJS + Face Landmarks (UMD builds) -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.20.0/dist/tf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/face-landmarks-detection@1.0.4/dist/face-landmarks-detection.min.js"></script>
+
+  <script>
+    // ---------- Utility ----------
+    const $ = (sel, el=document) => el.querySelector(sel);
+    const $$ = (sel, el=document) => Array.from(el.querySelectorAll(sel));
+
+    // Elements
+    const startCamBtn = $('#startCam');
+    const snapshotBtn = $('#snapshot');
+    const video = $('#video');
+    const stage = $('#stage');
+    const hairImg = $('#hair');
+    const overlay = $('#overlay');
+    const picker = $('#picker');
+    const upload = $('#upload');
+    const scaleInput = $('#scale');
+    const vOffInput = $('#vOffset');
+    const fpsInput = $('#fps');
+    const smoothInput = $('#smooth');
+    const cameraSelect = $('#cameraSelect');
+    const debugToggle = $('#debugToggle');
+    const debugBox = $('#debugBox');
+    const hint = $('#hint');
+    const notice = $('#notice');
+
+    // Build picker with inline SVGs (works out of the box)
+    function svgHair(kind='bob', color='black'){
+      if (kind === 'bob') {
+        return `data:image/svg+xml;utf8,${encodeURIComponent(`
+          <svg xmlns='http://www.w3.org/2000/svg' width='800' height='600' viewBox='0 0 800 600'>
+            <defs><linearGradient id='g' x1='0' x2='0' y1='0' y2='1'>
+              <stop offset='0' stop-color='${color}' stop-opacity='.95'/>
+              <stop offset='.65' stop-color='${color}' stop-opacity='.65'/>
+              <stop offset='1' stop-color='${color}' stop-opacity='0'/>
+            </linearGradient></defs>
+            <path d='M80,280 C110,120 260,40 400,40 C540,40 690,120 720,280 C735,360 690,470 600,500 C550,520 520,440 400,440 C280,440 250,520 200,500 C110,470 65,360 80,280 Z' fill='url(#g)'/>
+          </svg>
+        `)}`;
+      }
+      if (kind === 'curly') {
+        return `data:image/svg+xml;utf8,${encodeURIComponent(`
+          <svg xmlns='http://www.w3.org/2000/svg' width='900' height='700' viewBox='0 0 900 700'>
+            <defs><radialGradient id='rg' cx='.5' cy='.2' r='.8'>
+              <stop offset='0' stop-color='${color}' stop-opacity='.95'/>
+              <stop offset='.7' stop-color='${color}' stop-opacity='.6'/>
+              <stop offset='1' stop-color='${color}' stop-opacity='0'/>
+            </radialGradient></defs>
+            <path d='M120,300 C150,140 300,70 450,70 C600,70 750,140 780,300 C790,360 770,480 700,540 C650,580 600,540 560,560 C520,580 480,630 450,630 C420,630 380,580 340,560 C300,540 250,580 200,540 C130,480 110,360 120,300 Z' fill='url(#rg)'/>
+          </svg>
+        `)}`;
+      }
+      return `data:image/svg+xml;utf8,${encodeURIComponent(`
+        <svg xmlns='http://www.w3.org/2000/svg' width='700' height='500' viewBox='0 0 700 500'>
+          <defs><linearGradient id='g' x1='0' x2='0' y1='0' y2='1'>
+            <stop offset='0' stop-color='${color}' stop-opacity='.9'/>
+            <stop offset='.5' stop-color='${color}' stop-opacity='.55'/>
+            <stop offset='1' stop-color='${color}' stop-opacity='0'/>
+          </linearGradient></defs>
+          <path d='M70,230 C100,120 240,60 350,60 C460,60 600,120 630,230 C640,270 610,320 560,330 C520,340 500,300 420,300 C340,300 320,340 280,330 C230,320 200,270 210,230 Z' fill='url(#g)'/>
+        </svg>
+      `)}`;
+    }
+
+    const styles = [
+      { id:'bob',   label:'Bob',   src: svgHair('bob'),   scale: 1.35 },
+      { id:'curly', label:'Curly', src: svgHair('curly'), scale: 1.50 },
+      { id:'pixie', label:'Pixie', src: svgHair('pixie'), scale: 1.25 }
+    ];
+
+    function buildPicker(){
+      picker.innerHTML = '';
+      styles.forEach((s, idx) => {
+        const b = document.createElement('button');
+        b.className = 'chip' + (idx===0 ? ' active' : '');
+        b.dataset.src = s.src; b.dataset.scale = s.scale;
+        b.textContent = s.label; picker.appendChild(b);
+      });
+    }
+
+    // Camera enumeration & switching
+    async function listCams(){
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const cams = devices.filter(d => d.kind === 'videoinput');
+      cameraSelect.innerHTML = '';
+      cams.forEach((c, i) => {
+        const o = document.createElement('option'); o.value = c.deviceId; o.textContent = c.label || `Camera ${i+1}`; cameraSelect.appendChild(o);
+      });
+      if (!cams.length) showNotice('No cameras found. Try a different browser/device.');
+    }
+
+    let stream = null;
+    async function startCamera(deviceId){
+      if (stream) stream.getTracks().forEach(t => t.stop());
+      const constraints = deviceId ? { video: { deviceId }, audio:false } : { video: { facingMode: 'user' }, audio:false };
+      stream = await navigator.mediaDevices.getUserMedia(constraints);
+      video.srcObject = stream; await video.play();
+    }
+
+    // State
+    let model = null;
+    let running = false;
+    let lastInfer = 0;
+    let scaleFactor = parseFloat(localStorage.getItem('stylebook_scale') || scaleInput.value);
+    let vOffset = parseFloat(localStorage.getItem('stylebook_voff') || vOffInput.value);
+    let smoothT = parseFloat(localStorage.getItem('stylebook_smooth') || smoothInput.value);
+
+    // Smoothing
+    const smooth = { x: null, y: null, w: null, h: null, angle: 0 };
+    const lerp = (a,b,t)=> a + (b-a)*t;
+
+    // Init
+    (async () => {
+      try{ await tf.setBackend('webgl'); await tf.ready(); } catch(e){ console.warn('TF backend set warning:', e); }
+      buildPicker();
+      chooseHair(styles[0].src);
+      scaleInput.value = scaleFactor; vOffInput.value = vOffset; smoothInput.value = smoothT;
+      await listCams();
+    })();
+
+    // UI listeners
+    startCamBtn.addEventListener('click', async () => {
+      try{
+        await startCamera(cameraSelect.value || null);
+        await initModel();
+        startLoop();
+        hideNotice();
+      }catch(e){ showNotice('Could not access camera. Use HTTPS and allow permission.'); console.error(e); }
+    });
+
+    cameraSelect.addEventListener('change', async () => {
+      if (!video) return; await startCamera(cameraSelect.value); // keeps loop running
+    });
+
+    snapshotBtn.addEventListener('click', snapshot);
+
+    picker.addEventListener('click', (e) => {
+      const btn = e.target.closest('.chip'); if(!btn) return;
+      $$('.chip', picker).forEach(c=>c.classList.remove('active')); btn.classList.add('active');
+      scaleFactor = parseFloat(btn.dataset.scale || scaleInput.value);
+      scaleInput.value = String(scaleFactor);
+      chooseHair(btn.dataset.src);
+      persist();
+    });
+
+    upload.addEventListener('change', () => {
+      const file = upload.files && upload.files[0]; if(!file) return;
+      const url = URL.createObjectURL(file);
+      chooseHair(url);
+      $$('.chip', picker).forEach(c=>c.classList.remove('active'));
+    });
+
+    scaleInput.addEventListener('input', () => { scaleFactor = parseFloat(scaleInput.value); persist(); });
+    vOffInput.addEventListener('input', () => { vOffset = parseFloat(vOffInput.value); persist(); });
+    smoothInput.addEventListener('input', () => { smoothT = parseFloat(smoothInput.value); persist(); });
+
+    debugToggle.addEventListener('change', ()=>{
+      debugBox.style.display = debugToggle.checked ? 'block' : 'none';
+    });
+
+    function persist(){
+      localStorage.setItem('stylebook_scale', scaleFactor);
+      localStorage.setItem('stylebook_voff', vOffset);
+      localStorage.setItem('stylebook_smooth', smoothT);
+    }
+
+    function showNotice(msg){ notice.textContent = msg; notice.style.display = 'block'; }
+    function hideNotice(){ notice.style.display = 'none'; }
+
+    async function initModel(){
+      if (model) return;
+      const mdl = faceLandmarksDetection.SupportedModels.MediaPipeFaceMesh;
+      model = await faceLandmarksDetection.createDetector(mdl, { runtime:'tfjs', refineLandmarks:false, maxFaces:2 });
+    }
+
+    function chooseHair(src){ hairImg.src = src; }
+
+    function pickLargestFace(faces){
+      if (!faces || !faces.length) return null;
+      let maxA = -1, best = null;
+      for (const f of faces){
+        const xs = f.keypoints.map(k => k.x), ys = f.keypoints.map(k => k.y);
+        const a = (Math.max(...xs)-Math.min(...xs)) * (Math.max(...ys)-Math.min(...ys));
+        if (a > maxA){ maxA = a; best = f; }
+      }
+      return best;
+    }
+
+    function getScaleFactors(){
+      const rect = stage.getBoundingClientRect();
+      const vw = video.videoWidth || rect.width;
+      const vh = video.videoHeight || rect.height;
+      return { sx: rect.width / vw, sy: rect.height / vh };
+    }
+
+    function snapshot(){
+      const rect = stage.getBoundingClientRect();
+      const canvas = document.createElement('canvas'); canvas.width = rect.width; canvas.height = rect.height;
+      const ctx = canvas.getContext('2d');
+      // draw mirrored video
+      ctx.save(); ctx.scale(-1, 1); ctx.drawImage(video, -rect.width, 0, rect.width, rect.height); ctx.restore();
+      // draw hair with rotation
+      const imgRect = hairImg.getBoundingClientRect();
+      const stageRect = rect;
+      const x = imgRect.left - stageRect.left; const y = imgRect.top - stageRect.top; const w = imgRect.width; const h = imgRect.height;
+      const tmp = document.createElement('canvas'); tmp.width = w; tmp.height = h; const tctx = tmp.getContext('2d');
+      const angle = (hairImg.style.transform.match(/rotate\(([-0-9.]+)deg\)/) || [0,0])[1] * Math.PI/180;
+      tctx.translate(w/2, h/2); tctx.rotate(angle); tctx.translate(-w/2, -h/2);
+      const img = new Image(); img.onload = () => { tctx.drawImage(img, 0, 0, w, h); ctx.drawImage(tmp, x, y); const a = document.createElement('a'); a.download = 'stylebook-snapshot.png'; a.href = canvas.toDataURL('image/png'); a.click(); };
+      img.src = hairImg.src;
+    }
+
+    function startLoop(){
+      if (running) return; running = true; hint.style.display = 'block';
+      const loop = async (ts) => {
+        if (!running || !model || video.readyState < 2){ requestAnimationFrame(loop); return; }
+        const fpsTarget = parseInt(fpsInput.value, 10) || 15;
+        if (ts - lastInfer < 1000 / fpsTarget){ requestAnimationFrame(loop); return; }
+        lastInfer = ts;
+        try{
+          const faces = await model.estimateFaces(video, { flipHorizontal: true });
+          const f = pickLargestFace(faces);
+          if (f){
+            const { sx, sy } = getScaleFactors();
+            const xs = f.keypoints.map(k => k.x), ys = f.keypoints.map(k => k.y);
+            const minX = Math.min(...xs) * sx, maxX = Math.max(...xs) * sx;
+            const minY = Math.min(...ys) * sy, maxY = Math.max(...ys) * sy;
+            const w = maxX - minX, h = maxY - minY;
+            const leftEye = f.keypoints[263]; const rightEye = f.keypoints[33];
+            const angle = (leftEye && rightEye) ? (Math.atan2((leftEye.y*sy) - (rightEye.y*sy), (leftEye.x*sx) - (rightEye.x*sx)) * 180 / Math.PI) : 0;
+
+            // Smooth
+            const t = smoothT; // 0..0.6
+            smooth.x = smooth.x===null ? minX : lerp(smooth.x, minX, t);
+            smooth.y = smooth.y===null ? minY : lerp(smooth.y, minY, t);
+            smooth.w = smooth.w===null ? w    : lerp(smooth.w,  w,  t);
+            smooth.h = smooth.h===null ? h    : lerp(smooth.h,  h,  t);
+            smooth.angle = lerp(smooth.angle, angle, Math.max(t, 0.25));
+
+            // Position hair
+            const hairW = smooth.w * scaleFactor;
+            const hairH = smooth.h * 0.9;
+            const hairX = smooth.x + smooth.w / 2 - hairW / 2;
+            const hairY = Math.max(smooth.y - smooth.h * vOffset, 0);
+
+            Object.assign(hairImg.style, {
+              display: 'block', left: hairX + 'px', top: hairY + 'px', width: hairW + 'px', height: hairH + 'px', transform: `rotate(${smooth.angle}deg)`
+            });
+
+            // Debug box
+            if (debugToggle.checked){
+              Object.assign(debugBox.style, { display: 'block', left: minX + 'px', top: minY + 'px', width: w + 'px', height: h + 'px' });
+            }
+
+            hint.style.display = 'none';
+          } else {
+            hairImg.style.display = 'none';
+            hint.style.display = 'block';
+            if (debugToggle.checked) debugBox.style.display = 'none';
+            smooth.x = smooth.y = smooth.w = smooth.h = null;
+          }
+        }catch(err){ console.error(err); }
+        requestAnimationFrame(loop);
+      };
+      requestAnimationFrame(loop);
+    }
+
+    // Booking demo
+    $('#form').addEventListener('submit', (e)=>{
+      e.preventDefault();
+      const data = Object.fromEntries(new FormData(e.target).entries());
+      alert('Booked!\n\n' + JSON.stringify(data, null, 2));
+      e.target.reset();
+    });
+
+    // Footer year
+    $('#year').textContent = new Date().getFullYear();
+
+    // Clean up on unload
+    window.addEventListener('beforeunload', () => { if (stream) stream.getTracks().forEach(t => t.stop()); });
+  </script>
+</body>
+</html>
