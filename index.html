@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>StyleBook — Booking + AR Try‑On (Enhanced TFJS, Single‑File)</title>
+  <title>StyleBook — 3 Hairstyle Filters (TFJS, Single‑File)</title>
   <style>
     :root{ --ink:#111827; --muted:#6B7280; --bg:#F9FAFB; --card:#FFFFFF; --accent:#111827; --radius:16px; --radius-sm:12px; --shadow:0 8px 24px rgba(0,0,0,.08); }
     *{box-sizing:border-box}
@@ -29,12 +29,15 @@
     .stage{position:relative;width:100%;aspect-ratio:3/4;background:#000;border-radius:var(--radius);overflow:hidden}
     .stage video{width:100%;height:100%;object-fit:cover;transform:scaleX(-1)} /* mirrored */
     .overlay{position:absolute;left:0;top:0;right:0;bottom:0;pointer-events:none}
-    .hair{position:absolute;width:240px;user-select:none;filter:drop-shadow(0 4px 12px rgba(0,0,0,.25))}
+    .hair{position:absolute;width:240px;user-select:none;filter:drop-shadow(0 4px 12px rgba(0,0,0,.25));pointer-events:none}
 
     .toolbar{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}
     .picker{display:flex;gap:8px;flex-wrap:wrap}
     .chip{padding:8px 10px;border-radius:999px;border:1px solid #ddd;background:#fff;font-weight:700;cursor:pointer}
     .chip.active{background:var(--ink);color:#fff;border-color:var(--ink)}
+
+    .swatch{width:28px;height:28px;border-radius:999px;border:2px solid #e5e7eb;cursor:pointer;display:inline-block}
+    .swatch.active{outline:3px solid #111827}
 
     .sliders{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
     .sliders label{font-size:12px;color:#374151;font-weight:700}
@@ -59,7 +62,7 @@
 <body>
   <nav>
     <div class="row container">
-      <div class="brand">StyleBook (Enhanced)</div>
+      <div class="brand">StyleBook</div>
       <a class="btn ghost" href="#tryon">AR Try‑On</a>
       <a class="btn ghost" href="#booking">Book</a>
       <div class="spacer"></div>
@@ -73,7 +76,7 @@
     <section id="tryon" class="card">
       <div class="pad">
         <h1>AR Hairstyle Try‑On (Auto Tracking)</h1>
-        <p class="muted">Runs in-browser via TensorFlow.js FaceMesh. Overlay auto‑aligns, rotates, and scales to your face. Now with camera switching, FPS limit, smoothing, and better sizing on any screen.</p>
+        <p class="muted">Three ready‑made styles (Bob, Curly, Pixie). Runs in‑browser via TensorFlow.js FaceMesh with auto‑align, rotation, scaling, camera switching, FPS cap, smoothing, and snapshots. You can also upload your own PNG/SVG.</p>
 
         <div id="notice" class="banner" style="display:none"></div>
 
@@ -93,7 +96,10 @@
             </label>
           </div>
           <div class="picker" id="picker"></div>
-          <label class="chip" for="upload">Upload PNG</label>
+          <div class="picker" id="colorPicker" aria-label="Hair Colors" style="align-items:center">
+            <span style="font-weight:700;font-size:12px;color:#374151;margin-right:4px">Color</span>
+          </div>
+          <label class="chip" for="upload">Upload PNG/SVG</label>
           <input id="upload" type="file" accept="image/png,image/svg+xml" style="display:none" />
         </div>
         <div class="sliders">
@@ -110,11 +116,11 @@
             <img id="hair" class="hair" alt="hair" src="" />
           </div>
         </div>
-        <div class="tip">Good lighting helps tracking. If overlay is off, tweak <b>Scale</b> or <b>Vertical Offset</b>. Switch cameras for rear/front.</div>
+        <div class="tip">Tip: Good lighting helps tracking. If the overlay is slightly off, tweak <b>Scale</b> and <b>Vertical Offset</b>. Camera access needs HTTPS (localhost is okay).</div>
       </div>
     </section>
 
-    <!-- BOOKING CARD -->
+    <!-- BOOKING CARD (demo only) -->
     <section id="booking" class="card">
       <div class="pad">
         <h2>Book an Appointment</h2>
@@ -182,7 +188,7 @@
     </section>
   </main>
 
-  <footer class="container">© <span id="year"></span> StyleBook — Camera requires HTTPS (localhost is fine).</footer>
+  <footer class="container">© <span id="year"></span> StyleBook — In‑browser demo.</footer>
 
   <!-- TFJS + Face Landmarks (UMD builds) -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.20.0/dist/tf.min.js"></script>
@@ -201,6 +207,7 @@
     const hairImg = $('#hair');
     const overlay = $('#overlay');
     const picker = $('#picker');
+    const colorPicker = $('#colorPicker');
     const upload = $('#upload');
     const scaleInput = $('#scale');
     const vOffInput = $('#vOffset');
@@ -212,16 +219,18 @@
     const hint = $('#hint');
     const notice = $('#notice');
 
-    // Build picker with inline SVGs (works out of the box)
-    function svgHair(kind='bob', color='black'){
+    // ---------- Hair SVG generator (3 filters) ----------
+    function svgHair(kind='bob', color='#111111'){
       if (kind === 'bob') {
         return `data:image/svg+xml;utf8,${encodeURIComponent(`
           <svg xmlns='http://www.w3.org/2000/svg' width='800' height='600' viewBox='0 0 800 600'>
-            <defs><linearGradient id='g' x1='0' x2='0' y1='0' y2='1'>
-              <stop offset='0' stop-color='${color}' stop-opacity='.95'/>
-              <stop offset='.65' stop-color='${color}' stop-opacity='.65'/>
-              <stop offset='1' stop-color='${color}' stop-opacity='0'/>
-            </linearGradient></defs>
+            <defs>
+              <linearGradient id='g' x1='0' x2='0' y1='0' y2='1'>
+                <stop offset='0' stop-color='${color}' stop-opacity='.95'/>
+                <stop offset='.65' stop-color='${color}' stop-opacity='.65'/>
+                <stop offset='1' stop-color='${color}' stop-opacity='0'/>
+              </linearGradient>
+            </defs>
             <path d='M80,280 C110,120 260,40 400,40 C540,40 690,120 720,280 C735,360 690,470 600,500 C550,520 520,440 400,440 C280,440 250,520 200,500 C110,470 65,360 80,280 Z' fill='url(#g)'/>
           </svg>
         `)}`;
@@ -229,52 +238,79 @@
       if (kind === 'curly') {
         return `data:image/svg+xml;utf8,${encodeURIComponent(`
           <svg xmlns='http://www.w3.org/2000/svg' width='900' height='700' viewBox='0 0 900 700'>
-            <defs><radialGradient id='rg' cx='.5' cy='.2' r='.8'>
-              <stop offset='0' stop-color='${color}' stop-opacity='.95'/>
-              <stop offset='.7' stop-color='${color}' stop-opacity='.6'/>
-              <stop offset='1' stop-color='${color}' stop-opacity='0'/>
-            </radialGradient></defs>
+            <defs>
+              <radialGradient id='rg' cx='.5' cy='.2' r='.8'>
+                <stop offset='0' stop-color='${color}' stop-opacity='.95'/>
+                <stop offset='.7' stop-color='${color}' stop-opacity='.6'/>
+                <stop offset='1' stop-color='${color}' stop-opacity='0'/>
+              </radialGradient>
+            </defs>
             <path d='M120,300 C150,140 300,70 450,70 C600,70 750,140 780,300 C790,360 770,480 700,540 C650,580 600,540 560,560 C520,580 480,630 450,630 C420,630 380,580 340,560 C300,540 250,580 200,540 C130,480 110,360 120,300 Z' fill='url(#rg)'/>
           </svg>
         `)}`;
       }
+      // pixie (default)
       return `data:image/svg+xml;utf8,${encodeURIComponent(`
         <svg xmlns='http://www.w3.org/2000/svg' width='700' height='500' viewBox='0 0 700 500'>
-          <defs><linearGradient id='g' x1='0' x2='0' y1='0' y2='1'>
-            <stop offset='0' stop-color='${color}' stop-opacity='.9'/>
-            <stop offset='.5' stop-color='${color}' stop-opacity='.55'/>
-            <stop offset='1' stop-color='${color}' stop-opacity='0'/>
-          </linearGradient></defs>
+          <defs>
+            <linearGradient id='g' x1='0' x2='0' y1='0' y2='1'>
+              <stop offset='0' stop-color='${color}' stop-opacity='.9'/>
+              <stop offset='.5' stop-color='${color}' stop-opacity='.55'/>
+              <stop offset='1' stop-color='${color}' stop-opacity='0'/>
+            </linearGradient>
+          </defs>
           <path d='M70,230 C100,120 240,60 350,60 C460,60 600,120 630,230 C640,270 610,320 560,330 C520,340 500,300 420,300 C340,300 320,340 280,330 C230,320 200,270 210,230 Z' fill='url(#g)'/>
         </svg>
       `)}`;
     }
 
     const styles = [
-      { id:'bob',   label:'Bob',   src: svgHair('bob'),   scale: 1.35 },
-      { id:'curly', label:'Curly', src: svgHair('curly'), scale: 1.50 },
-      { id:'pixie', label:'Pixie', src: svgHair('pixie'), scale: 1.25 }
+      { id:'bob',   label:'Bob',   scale: 1.35, vOff: 0.45 },
+      { id:'curly', label:'Curly', scale: 1.50, vOff: 0.42 },
+      { id:'pixie', label:'Pixie', scale: 1.25, vOff: 0.40 }
     ];
 
-    function buildPicker(){
+    const colors = [
+      { id:'black',  label:'Black',  value:'#111111' },
+      { id:'brown',  label:'Brown',  value:'#5C4033' },
+      { id:'blonde', label:'Blonde', value:'#E6BE8A' },
+      { id:'red',    label:'Auburn', value:'#8B2E1D' }
+    ];
+
+    function buildPickers(){
+      // style chips
       picker.innerHTML = '';
-      styles.forEach((s, idx) => {
+      const savedStyle = localStorage.getItem('stylebook_style') || styles[0].id;
+      styles.forEach((s) => {
         const b = document.createElement('button');
-        b.className = 'chip' + (idx===0 ? ' active' : '');
-        b.dataset.src = s.src; b.dataset.scale = s.scale;
-        b.textContent = s.label; picker.appendChild(b);
+        b.type = 'button';
+        b.className = 'chip' + (s.id===savedStyle ? ' active' : '');
+        b.dataset.style = s.id; b.textContent = s.label;
+        picker.appendChild(b);
+      });
+
+      // color swatches
+      const savedColor = localStorage.getItem('stylebook_color') || colors[0].id;
+      colors.forEach(c => {
+        const sw = document.createElement('button');
+        sw.type = 'button';
+        sw.className = 'swatch' + (c.id===savedColor ? ' active' : '');
+        sw.title = c.label; sw.dataset.color = c.id; sw.style.background = c.value;
+        colorPicker.appendChild(sw);
       });
     }
 
     // Camera enumeration & switching
     async function listCams(){
-      const devices = await navigator.mediaDevices.enumerateDevices();
-      const cams = devices.filter(d => d.kind === 'videoinput');
-      cameraSelect.innerHTML = '';
-      cams.forEach((c, i) => {
-        const o = document.createElement('option'); o.value = c.deviceId; o.textContent = c.label || `Camera ${i+1}`; cameraSelect.appendChild(o);
-      });
-      if (!cams.length) showNotice('No cameras found. Try a different browser/device.');
+      try{
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const cams = devices.filter(d => d.kind === 'videoinput');
+        cameraSelect.innerHTML = '';
+        cams.forEach((c, i) => {
+          const o = document.createElement('option'); o.value = c.deviceId; o.textContent = c.label || `Camera ${i+1}`; cameraSelect.appendChild(o);
+        });
+        if (!cams.length) showNotice('No cameras found. Try a different browser/device.');
+      }catch(e){ showNotice('Could not list cameras. Allow camera permission first.'); }
     }
 
     let stream = null;
@@ -289,9 +325,11 @@
     let model = null;
     let running = false;
     let lastInfer = 0;
-    let scaleFactor = parseFloat(localStorage.getItem('stylebook_scale') || scaleInput.value);
-    let vOffset = parseFloat(localStorage.getItem('stylebook_voff') || vOffInput.value);
-    let smoothT = parseFloat(localStorage.getItem('stylebook_smooth') || smoothInput.value);
+    let currentStyle = localStorage.getItem('stylebook_style') || styles[0].id;
+    let currentColor = localStorage.getItem('stylebook_color') || colors[0].id;
+    let scaleFactor = parseFloat(localStorage.getItem('stylebook_scale') || $('#scale').value);
+    let vOffset = parseFloat(localStorage.getItem('stylebook_voff') || $('#vOffset').value);
+    let smoothT = parseFloat(localStorage.getItem('stylebook_smooth') || $('#smooth').value);
 
     // Smoothing
     const smooth = { x: null, y: null, w: null, h: null, angle: 0 };
@@ -300,8 +338,9 @@
     // Init
     (async () => {
       try{ await tf.setBackend('webgl'); await tf.ready(); } catch(e){ console.warn('TF backend set warning:', e); }
-      buildPicker();
-      chooseHair(styles[0].src);
+      buildPickers();
+      applyStyle(currentStyle, false); // sets defaults
+      applyColor(currentColor, false);
       scaleInput.value = scaleFactor; vOffInput.value = vOffset; smoothInput.value = smoothT;
       await listCams();
     })();
@@ -325,16 +364,19 @@
     picker.addEventListener('click', (e) => {
       const btn = e.target.closest('.chip'); if(!btn) return;
       $$('.chip', picker).forEach(c=>c.classList.remove('active')); btn.classList.add('active');
-      scaleFactor = parseFloat(btn.dataset.scale || scaleInput.value);
-      scaleInput.value = String(scaleFactor);
-      chooseHair(btn.dataset.src);
-      persist();
+      applyStyle(btn.dataset.style, true);
+    });
+
+    colorPicker.addEventListener('click', (e)=>{
+      const sw = e.target.closest('.swatch'); if(!sw) return;
+      $$('.swatch', colorPicker).forEach(s=>s.classList.remove('active')); sw.classList.add('active');
+      applyColor(sw.dataset.color, true);
     });
 
     upload.addEventListener('change', () => {
       const file = upload.files && upload.files[0]; if(!file) return;
       const url = URL.createObjectURL(file);
-      chooseHair(url);
+      hairImg.src = url; // custom asset bypasses colorization
       $$('.chip', picker).forEach(c=>c.classList.remove('active'));
     });
 
@@ -347,6 +389,8 @@
     });
 
     function persist(){
+      localStorage.setItem('stylebook_style', currentStyle);
+      localStorage.setItem('stylebook_color', currentColor);
       localStorage.setItem('stylebook_scale', scaleFactor);
       localStorage.setItem('stylebook_voff', vOffset);
       localStorage.setItem('stylebook_smooth', smoothT);
@@ -361,7 +405,28 @@
       model = await faceLandmarksDetection.createDetector(mdl, { runtime:'tfjs', refineLandmarks:false, maxFaces:2 });
     }
 
-    function chooseHair(src){ hairImg.src = src; }
+    function currentColorValue(){
+      const c = colors.find(x => x.id === currentColor) || colors[0];
+      return c.value;
+    }
+
+    function applyStyle(styleId, updateDefaults){
+      const s = styles.find(x => x.id === styleId) || styles[0];
+      currentStyle = s.id;
+      if (updateDefaults){
+        scaleFactor = s.scale; vOffset = s.vOff; // sensible per-style defaults
+        scaleInput.value = String(scaleFactor);
+        vOffInput.value = String(vOffset);
+      }
+      hairImg.src = svgHair(currentStyle, currentColorValue());
+      persist();
+    }
+
+    function applyColor(colorId, redraw){
+      currentColor = colorId;
+      if (redraw){ hairImg.src = svgHair(currentStyle, currentColorValue()); }
+      persist();
+    }
 
     function pickLargestFace(faces){
       if (!faces || !faces.length) return null;
@@ -425,9 +490,9 @@
             smooth.h = smooth.h===null ? h    : lerp(smooth.h,  h,  t);
             smooth.angle = lerp(smooth.angle, angle, Math.max(t, 0.25));
 
-            // Position hair
+            // Position hair (centered relative to face box)
             const hairW = smooth.w * scaleFactor;
-            const hairH = smooth.h * 0.9;
+            const hairH = smooth.h * 0.9; // keeps proportions natural
             const hairX = smooth.x + smooth.w / 2 - hairW / 2;
             const hairY = Math.max(smooth.y - smooth.h * vOffset, 0);
 
